@@ -19,3 +19,29 @@ test('SSE 解析能处理跨块 UTF-8、CRLF 与最终 DONE', async () => {
   for await (const event of parseSSE(input())) result.push(event);
   assert.deepEqual(result, ['{"text":"中文"}', '[DONE]']);
 });
+
+test('长上下文裁剪完整旧轮次，保留系统提示和最新图片且不修改原始记录', async () => {
+  const { prepareContext } = await import('../engine.mjs');
+  const messages = [
+    { role: 'system', content: 'system' },
+    { role: 'user', content: '旧问题'.repeat(4000) },
+    { role: 'assistant', content: '旧答案' },
+    { role: 'user', content: '最新图片', images: ['image'] },
+  ];
+  const result = prepareContext(messages, 16384);
+  assert.deepEqual(result.messages, [messages[0], messages[3]]);
+  assert.equal(result.maxTokens, 4096);
+  assert.equal(messages.length, 4);
+});
+
+test('单轮超长输入不截断当前问题，留给引擎准确判断；短对话完整保留', async () => {
+  const { prepareContext, dropOldestTurn } = await import('../engine.mjs');
+  const messages = [
+    { role: 'system', content: 's' },
+    { role: 'user', content: 'x'.repeat(20000) },
+  ];
+  assert.equal(dropOldestTurn(messages), null);
+  assert.deepEqual(prepareContext(messages, 16384).messages, messages);
+  const short = [{ role: 'user', content: '你好' }];
+  assert.deepEqual(prepareContext(short, 8192), { messages: short, maxTokens: 2048 });
+});

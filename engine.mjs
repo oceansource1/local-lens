@@ -207,25 +207,79 @@ export async function* parseSSE(chunks) {
   buffer += decoder.decode();
   if (buffer.startsWith('data:')) yield buffer.slice(5).trim();
 }
+// Keep the current user turn intact; never leave orphaned assistant messages.
+export function dropOldestTurn(messages) {
+  const first = messages.findIndex((m) => m.role === 'user');
+  const next = messages.findIndex((m, i) => i > first && m.role === 'user');
+  if (first < 0 || next < 0) return null;
+  return [...messages.slice(0, first), ...messages.slice(next)];
+}
+export function prepareContext(messages, contextSize) {
+  const maxTokens = Math.min(4096, Math.floor(contextSize / 4));
+  let kept = messages;
+  // Conservative text estimate; visual token counts vary by model. Runtime errors
+  // below provide authoritative counts when images exceed this estimate.
+  const estimate = (items) =>
+    items.reduce(
+      (sum, m) =>
+        sum + Buffer.byteLength(m.content || '', 'utf8') + 32 + (m.images?.length || 0) * 2048,
+      128,
+    );
+  while (estimate(kept) + maxTokens > contextSize) {
+    const shorter = dropOldestTurn(kept);
+    if (!shorter) break;
+    kept = shorter;
+  }
+  return { messages: kept, maxTokens };
+}
 export async function* chat(name, messages, signal) {
   await ensureModel(name);
   signal.throwIfAborted();
-  const response = await fetch(base + '/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: name,
-      messages: toRuntimeMessages(messages),
-      stream: true,
-      max_tokens: 4096,
-      temperature: 0.25,
-    }),
-    signal,
-  });
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`本地模型请求失败：${error.slice(0, 800)}`);
+  const contextSize = registry.get(name).contextSize;
+  const prepared = prepareContext(messages, contextSize);
+  let kept = prepared.messages;
+  let response;
+  let maxTokens = prepared.maxTokens;
+  while (true) {
+    response = await fetch(base + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: name,
+        messages: toRuntimeMessages(kept),
+        stream: true,
+        max_tokens: maxTokens,
+        temperature: 0.25,
+      }),
+      signal,
+    });
+    if (response.ok) break;
+    const raw = await response.text();
+    let error;
+    try {
+      error = JSON.parse(raw).error;
+    } catch {}
+    if (error?.type !== 'exceed_context_size_error')
+      throw new Error(`本地模型请求失败：${raw.slice(0, 800)}`);
+    const shorter = dropOldestTurn(kept);
+    if (shorter) {
+      kept = shorter;
+      continue;
+    }
+    const available = Number(error.n_ctx) - Number(error.n_prompt_tokens) - 128;
+    if (available >= 256 && available < maxTokens) {
+      maxTokens = available;
+      continue;
+    }
+    throw new Error(
+      `当前问题或图片超过模型上下文容量（${contextSize} tokens）。已移除旧对话，请缩短本次文字或裁剪图片后重试。`,
+    );
   }
+  if (kept.length < messages.length)
+    yield {
+      message: { content: '[上下文较长，本次仅使用最近的对话；完整记录仍保留。]\n\n' },
+      done: false,
+    };
   let finished = false;
   for await (const data of parseSSE(response.body)) {
     if (data === '[DONE]') {

@@ -30,7 +30,7 @@
       "projectorSha256": "7a7225a32e8d453aaa3d22d8c579b5bf833c253f784cdb05c99c9a76fd616df8",
       "capabilities": ["completion", "vision"],
       "source": "https://huggingface.co/openbmb/MiniCPM-V-4_5-gguf/tree/8bfaecb5b1a65f068b86c32b997a3d5d8902eb36",
-      "contextSize": 4096,
+      "contextSize": 16384,
       "fastVision": true,
       "projectorRemote": "mmproj-model-f16.gguf"
     },
@@ -44,7 +44,7 @@
       "projectorSha256": "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
       "capabilities": ["completion", "vision"],
       "source": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/tree/3885219b6810b007914f3a7950a8d1b469d598a5",
-      "contextSize": 4096,
+      "contextSize": 16384,
       "fastVision": true,
       "projectorRemote": "mmproj-F16.gguf"
     },

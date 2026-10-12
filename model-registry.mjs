@@ -142,8 +142,8 @@ export function createRegistry({
           entry.unavailable =
             '缺少配套 mmproj 视觉组件，请使用“导入视觉模型”同时选择主模型和组件。';
         entry.available = !entry.unavailable;
-        entry.contextSize = entry.contextSize || (entry.size > 7e9 ? 4096 : 8192);
-        entry.note = entry.size > 7e9 ? '内存占用较高，使用 4096 上下文' : '';
+        entry.contextSize = entry.contextSize || (entry.size > 7e9 ? 8192 : 16384);
+        entry.note = entry.size > 7e9 ? '内存占用较高，使用 8192 上下文' : '';
         seen.add(entry.file);
         next.set(entry.name, entry);
       } catch (e) {
